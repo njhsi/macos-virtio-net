@@ -22,12 +22,12 @@ atexit {
 tcattr.pointee.c_lflag &= ~UInt(ECHO | ICANON | ISIG)
 tcsetattr(FileHandle.standardInput.fileDescriptor, TCSAFLUSH, tcattr)
 
-if (access("vdb.img", F_OK) != 0) {
-    if (fclose(fopen("vdb.img", "w")) != 0) {
+if (access("/Users/nj0/sandbox/virt/vdb.img", F_OK) != 0) {
+    if (fclose(fopen("/Users/nj0/sandbox/virt/vdb.img", "w")) != 0) {
         perror("create vdb.img")
         exit(1)
     }
-    if (truncate("vdb.img", 16 * 1024 * 1024 * 1024) != 0) {
+    if (truncate("/Users/nj0/sandbox/virt/vdb.img", 16 * 1024 * 1024 * 1024) != 0) {
         perror("resize vdb.img")
         exit(1)
     }
@@ -38,8 +38,8 @@ config.cpuCount = 2
 config.memorySize = 4 * 1024 * 1024 * 1024
 
 do {
-    let vda = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "vda.img"), readOnly: false)
-    let vdb = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "vdb.img"), readOnly: false)
+    let vda = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vda.img"), readOnly: false)
+    let vdb = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vdb.img"), readOnly: false)
     config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: vda), VZVirtioBlockDeviceConfiguration(attachment: vdb)]
 } catch {
     fatalError("Virtual Machine Storage Error: \(error)")
@@ -47,7 +47,7 @@ do {
 
 config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 
-/*
+
 let network = VZVirtioNetworkDeviceConfiguration()
 if let macAddressString = try? String(contentsOfFile: ".virt.mac", encoding: .utf8),
    let macAddress = VZMACAddress(string: macAddressString.trimmingCharacters(in: .whitespacesAndNewlines)) {
@@ -62,21 +62,22 @@ if let macAddressString = try? String(contentsOfFile: ".virt.mac", encoding: .ut
     }
 }
 network.attachment = VZNATNetworkDeviceAttachment()
-config.networkDevices = [network]
-*/
+//config.networkDevices = [network]
+
 
 let network2 = VZVirtioNetworkDeviceConfiguration()
 let bridger = NetworkSwitch()
 let vmac = ether_addr_t(octet:(u_char(123),u_char(123),u_char(123),u_char(123),u_char(123),u_char(123)))
 do {
-    try network2.attachment = bridger.newBridgePort(hostBridge: "bridge1", vMac: vmac)
+    try network2.attachment = bridger.newBridgePort(hostBridge: "en0", vMac: vmac)
 } catch {
     fatalError("Virtual Machine Config Bridger Error: \(error)")
 }
-config.networkDevices = [network2]
-bridger.start()
+config.networkDevices = [network,network2]
+//bridger.start()
+ 
 
-let bootloader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: "vmlinuz"))
+let bootloader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vmlinuz"))
 bootloader.commandLine = "console=hvc0 root=/dev/vda" + (verbose ? "" : " quiet")
 config.bootLoader = bootloader
 
@@ -107,7 +108,7 @@ do {
 let vm = VZVirtualMachine(configuration: config)
 class VMDelegate : NSObject, VZVirtualMachineDelegate {
     func guestDidStop(_ virtualMachine: VZVirtualMachine) {
-        if verbose { NSLog("Virtual Machine Stopped") }
+        NSLog("Virtual Machine Stopped")
         exit(0)
     }
 
@@ -120,9 +121,13 @@ vm.delegate = delegate
 vm.start { result in
     switch result {
     case .success:
-        if verbose { NSLog("Virtual Machine Started") }
+        NSLog("Virtual Machine Started")
+        bridger.start()
+        NSLog("bridger Started")
     case let .failure(error):
         fatalError("Virtual Machine Start Error: \(error)")
     }
 }
+
 dispatchMain()
+NSLog("done dispatchMain")

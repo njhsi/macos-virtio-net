@@ -23,7 +23,6 @@ struct ifbreq {
 	uint8_t         pad[32];
 };
 
-
 struct ifbifconf {
 	uint32_t	ifbic_len;	/* buffer size */
 	union {

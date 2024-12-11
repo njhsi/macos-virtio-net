@@ -4,7 +4,25 @@
 //
 //  Created by nj0 on 2024/12/9.
 //
+import Foundation
 
+struct VMLogFacility {
+    func info(_ s:String) {
+        NSLog(s)
+    }
+    func error(_ s:String) {
+        NSLog(s)
+    }
+    func error(_ s:String,throttleKey:String) {
+        NSLog(s,throttleKey)
+    }
+}
+struct VMFileLogger {
+    static var shared = VMFileLogger()
+    func newFacility(_: String) -> VMLogFacility {
+        return VMLogFacility()
+    }
+}
 
 extension String {
     

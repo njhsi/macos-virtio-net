@@ -104,7 +104,7 @@ struct NetworkInterface {
                 // create
                 try withControlSocket { ctl in
                     guard ioctl(ctl, IfIoctl.SIOCIFCREATE2, &ifr) == 0 else {
-                        throw RVMError.sycallError("feth:create() in createFakeEth")
+                        throw RVMError.sycallError("feth:create()")
                     }
                     if peer != nil {
                         // from https://opensource.apple.com/source/network_cmds/network_cmds-606.40.2/ifconfig.tproj/iffake.c.auto.html

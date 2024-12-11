@@ -8,9 +8,9 @@ import Virtualization
 // we poll via kqeueues in this thread
 final class NetworkSwitch: Thread {
     static var shared = NetworkSwitch()
-//    static var logger: VMLogFacility = {
-//        VMFileLogger.shared.newFacility("nwswitch")
-//    }()
+    static var logger: VMLogFacility = {
+        VMFileLogger.shared.newFacility("nwswitch")
+    }()
 
     private var sockDevs: [VSockDev] = []
 
@@ -30,12 +30,10 @@ final class NetworkSwitch: Thread {
             if dev.isBridge {
                 do {
                     if try NetworkInterface.ensureBridgeMembership(bridge: dev.hostInterface, member: dev.fethBridgeSide) {
-//                        NetworkSwitch.logger.info("readded \(dev.fethBridgeSide) to bridge \(dev.hostInterface)")
-                        perror("readded \(dev.fethBridgeSide) to bridge \(dev.hostInterface)")
+                        NetworkSwitch.logger.info("readded \(dev.fethBridgeSide) to bridge \(dev.hostInterface)")
                     }
                 } catch {
-//                    NetworkSwitch.logger.error("\(error)")
-                    perror("\(error)")
+                    NetworkSwitch.logger.error("\(error)")
                 }
             }
         }
@@ -48,7 +46,6 @@ final class NetworkSwitch: Thread {
     }
 
     override func main() {
-        NSLog("entering thread main()")
         if !sockDevs.isEmpty {
             defer {
                 // close all sockets
@@ -69,8 +66,7 @@ final class NetworkSwitch: Thread {
                     if errno == EINTR || errno == EAGAIN {
                         continue
                     }
-//                    NetworkSwitch.logger.error("onEvent() failed: \(String(cString: strerror(errno)))")
-                    perror("onEvent() failed: \(String(cString: strerror(errno)))")
+                    NetworkSwitch.logger.error("onEvent() failed: \(String(cString: strerror(errno)))")
                 }
             }
 
@@ -79,7 +75,6 @@ final class NetworkSwitch: Thread {
                 dev.close()
             }
         }
-        NSLog("leaving thread main()")
     }
 
     func cancelAndJoin(_ pollTimeNanos: UInt64 = 100_000_000) async throws {
@@ -184,8 +179,7 @@ private struct VSockDev {
                 let nextPktPtr = UnsafeMutableRawPointer(pktPtr).advanced(by: Int(hdr.bh_caplen) + Int(hdr.bh_hdrlen))
                 if hdr.bh_caplen > 0 {
                     if nextPktPtr > endPtr {
-//                        NetworkSwitch.logger.error("\(hostInterface)-h2g: nextPktPtr out of bounds: \(nextPktPtr) > \(endPtr). current pktPtr=\(pktPtr) hdr=\(hdr)", throttleKey: "h2g-next-oob")
-                        perror("\(hostInterface)-h2g: nextPktPtr out of bounds: \(nextPktPtr) > \(endPtr). current pktPtr=\(pktPtr) hdr=\(hdr)")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: nextPktPtr out of bounds: \(nextPktPtr) > \(endPtr). current pktPtr=\(pktPtr) hdr=\(hdr)", throttleKey: "h2g-next-oob")
                     }
                     let hdr = pktPtr.pointee
                     let dataPtr = UnsafeMutableRawPointer(mutating: pktPtr).advanced(by: Int(hdr.bh_hdrlen))
@@ -194,21 +188,17 @@ private struct VSockDev {
                     wlen += Int(hdr.bh_caplen)
                     wlenActual += writeLen
                     if writeLen < 0 {
-//                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
-                        perror("\(hostInterface)-h2g: write() failed: \(String(cString: strerror(errno)))")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
                     } else if writeLen != Int(hdr.bh_caplen) {
-//                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: partial write", throttleKey: "h2g-writ-partial")
-                        perror("\(hostInterface)-h2g: write() failed: partial write")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: partial write", throttleKey: "h2g-writ-partial")
                     }
                 }
                 pktPtr = nextPktPtr.alignedUp(toMultipleOf: BPF_ALIGNMENT).assumingMemoryBound(to: bpf_hdr.self)
             }
         } else if len == 0 {
-//            NetworkSwitch.logger.error("\(hostInterface)-h2g: EOF", throttleKey: "h2g-eof")
-            perror("\(hostInterface)-h2g: EOF")
+            NetworkSwitch.logger.error("\(hostInterface)-h2g: EOF", throttleKey: "h2g-eof")
         } else if errno != EAGAIN && errno != EINTR {
-//            NetworkSwitch.logger.error("\(hostInterface)-h2g: read() failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-read-fail")
-            perror("\(hostInterface)-h2g: read() failed: \(String(cString: strerror(errno)))")
+            NetworkSwitch.logger.error("\(hostInterface)-h2g: read() failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-read-fail")
         }
     }
 
@@ -223,11 +213,9 @@ private struct VSockDev {
                 let len = write(ndrvSocket, basePtr, n)
                 if len != n {
                     if len < 0 {
-//                        NetworkSwitch.logger.error("\(hostInterface)-g2h: write() failed: \(String(cString: strerror(errno)))", throttleKey: "g2h-writ-fail")
-                        perror("\(hostInterface)-g2h: write() failed: \(String(cString: strerror(errno)))")
+                        NetworkSwitch.logger.error("\(hostInterface)-g2h: write() failed: \(String(cString: strerror(errno)))", throttleKey: "g2h-writ-fail")
                     } else if errno != EAGAIN && errno != EINTR {
-//                        NetworkSwitch.logger.error("\(hostInterface)-g2h: write() failed: partial write", throttleKey: "g2h-writ-partial")
-                        perror("\(hostInterface)-g2h: write() failed: partial write")
+                        NetworkSwitch.logger.error("\(hostInterface)-g2h: write() failed: partial write", throttleKey: "g2h-writ-partial")
                     }
                     break
                 }
@@ -237,11 +225,9 @@ private struct VSockDev {
                 }
             } else {
                 if n == 0 {
-//                    NetworkSwitch.logger.error("\(hostInterface)-g2h: EOF", throttleKey: "g2h-eof")
-                    perror("\(hostInterface)-g2h: EOF")
+                    NetworkSwitch.logger.error("\(hostInterface)-g2h: EOF", throttleKey: "g2h-eof")
                 } else if errno != EAGAIN && errno != EINTR {
-//                    NetworkSwitch.logger.error("\(hostInterface)-g2h: read() failed: \(String(cString: strerror(errno))): e=\(event)", throttleKey: "g2h-read-fail")
-                    perror("\(hostInterface)-g2h: read() failed: \(String(cString: strerror(errno))): e=\(event)")
+                    NetworkSwitch.logger.error("\(hostInterface)-g2h: read() failed: \(String(cString: strerror(errno))): e=\(event)", throttleKey: "g2h-read-fail")
                 }
                 break
             }
@@ -388,8 +374,7 @@ private struct KQSockets {
             eventLoop: for i in 0..<len {
                 let evt = eventsPtr.advanced(by: i).pointee
                 if evt.flags & UInt16(EV_ERROR) != 0 {
-//                    NetworkSwitch.logger.error("evt-error: \(String(cString: strerror(Int32(evt.data))))", throttleKey: "kq-evt-error")
-                    perror("evt-error: \(String(cString: strerror(Int32(evt.data))))")
+                    NetworkSwitch.logger.error("evt-error: \(String(cString: strerror(Int32(evt.data))))", throttleKey: "kq-evt-error")
                 } else if evt.data > 0 {
                     let fd = Int32(evt.ident)
                     for j in 0..<sockDevs.count {
@@ -404,8 +389,7 @@ private struct KQSockets {
                             continue
                         }
                     }
-//                    NetworkSwitch.logger.error("no route found for event: \(evt)", throttleKey: "kq-no-route")
-                    perror("no route found for event: \(evt)")
+                    NetworkSwitch.logger.error("no route found for event: \(evt)", throttleKey: "kq-no-route")
                 }
             }
         }
