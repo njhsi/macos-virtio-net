@@ -66,10 +66,9 @@ network.attachment = VZNATNetworkDeviceAttachment()
 
 
 let network2 = VZVirtioNetworkDeviceConfiguration()
-let bridger = NetworkSwitch()
 let vmac = ether_addr_t(octet:(u_char(123),u_char(123),u_char(123),u_char(123),u_char(123),u_char(123)))
 do {
-    try network2.attachment = bridger.newBridgePort(hostBridge: "en0", vMac: vmac)
+    try network2.attachment = NetworkSwitch.shared.newBridgePort(hostBridge: "en0", vMac: vmac)
 } catch {
     fatalError("Virtual Machine Config Bridger Error: \(error)")
 }
@@ -122,7 +121,7 @@ vm.start { result in
     switch result {
     case .success:
         NSLog("Virtual Machine Started")
-        bridger.start()
+        NetworkSwitch.shared.start()
         NSLog("bridger Started")
     case let .failure(error):
         fatalError("Virtual Machine Start Error: \(error)")
