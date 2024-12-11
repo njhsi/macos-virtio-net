@@ -66,7 +66,7 @@ network.attachment = VZNATNetworkDeviceAttachment()
 
 
 let network2 = VZVirtioNetworkDeviceConfiguration()
-let vmac = ether_addr_t(octet:(u_char(123),u_char(123),u_char(123),u_char(123),u_char(123),u_char(123)))
+let vmac = network2.macAddress.ethernetAddress
 do {
     try network2.attachment = NetworkSwitch.shared.newBridgePort(hostBridge: "en0", vMac: vmac)
 } catch {
