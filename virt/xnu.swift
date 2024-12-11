@@ -8,7 +8,7 @@
 
 extension String {
     
-    func copyTo<T>(tuple: inout T) {
+    func copyTo<T>(_ tuple: inout T) {
         
         let tupleSize = MemoryLayout.size(ofValue: tuple)
         

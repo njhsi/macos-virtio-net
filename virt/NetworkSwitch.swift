@@ -272,7 +272,7 @@ private struct VSockDev {
                 // bind to interface
                 var ifr = ifreq()
                 memset(&ifr, 0, MemoryLayout<ifreq>.size)
-                ifc.copyTo(tuple: &ifr.ifr_name)
+                ifc.copyTo(&ifr.ifr_name)
                 guard ioctl(fd, BpfIoctl.BIOCSETIF, &ifr) == 0 else {
                     fatalError("bpf ioctl(BIOCSETIF) failed for \(ifc): \(String(cString: strerror(errno)))")
                 }
@@ -310,7 +310,7 @@ private struct VSockDev {
         var nd = sockaddr_ndrv()
         nd.snd_len = UInt8(MemoryLayout<sockaddr_ndrv>.size)
         nd.snd_family = UInt8(AF_NDRV)
-        ifc.copyTo(tuple:&nd.snd_name)
+        ifc.copyTo(&nd.snd_name)
 
         withUnsafePointer(to: &nd) { nd_ptr in
             nd_ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { nd_ptr in

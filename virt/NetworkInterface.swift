@@ -68,7 +68,7 @@ struct NetworkInterface {
                     }
                     var ifr = ifreq()
                     memset(&ifr, 0, MemoryLayout<ifreq>.size)
-                    ifname.copyTo(tuple:&ifr.ifr_name)
+                    ifname.copyTo(&ifr.ifr_name)
                     guard ioctl(ctl, IfIoctl.SIOCFIFTYPE, &ifr) == 0 else {
                         fatalError("\(ifname):ioctl(SIOCFIFTYPE): \(String(cString: strerror(errno)))")
                     }
@@ -99,7 +99,7 @@ struct NetworkInterface {
             if !allFakeEths.contains(name) {
                 var ifr = ifreq()
                 memset(&ifr, 0, MemoryLayout.size(ofValue: ifr))
-                name.copyTo(tuple:&ifr.ifr_name)
+                name.copyTo(&ifr.ifr_name)
                 ifr.ifr_ifru.ifru_flags = Int16(IFF_UP | IFF_RUNNING)
                 // create
                 try withControlSocket { ctl in
@@ -110,10 +110,10 @@ struct NetworkInterface {
                         // from https://opensource.apple.com/source/network_cmds/network_cmds-606.40.2/ifconfig.tproj/iffake.c.auto.html
                         var iffr = if_fake_request()
                         memset(&iffr, 0, MemoryLayout.size(ofValue: iffr))
-                        peer!.copyTo(tuple:&iffr.iffr_u.iffru_peer_name)
+                        peer!.copyTo(&iffr.iffr_u.iffru_peer_name)
                         var ifd = ifdrv()
                         memset(&ifd, 0, MemoryLayout.size(ofValue: ifd))
-                        name.copyTo(tuple:&ifd.ifd_name)
+                        name.copyTo(&ifd.ifd_name)
                         ifd.ifd_cmd = UInt(IF_FAKE_S_CMD_SET_PEER)
                         withUnsafeMutablePointer(to: &iffr) { ifd.ifd_data = UnsafeMutableRawPointer($0) }
                         ifd.ifd_len = MemoryLayout.size(ofValue: iffr)
@@ -133,7 +133,7 @@ struct NetworkInterface {
     static func deleteInterface(_ name: String) throws {
         var ifr = ifreq()
         memset(&ifr, 0, MemoryLayout.size(ofValue: ifr))
-        name.copyTo(tuple:&ifr.ifr_name)
+        name.copyTo(&ifr.ifr_name)
         try withControlSocket { ctl in
             guard ioctl(ctl, IfIoctl.SIOCIFDESTROY, &ifr) == 0 else {
                 throw RVMError.sycallError("\(name):ioctl(SIOCIFDESTROY)")
@@ -159,7 +159,7 @@ struct NetworkInterface {
     static func changeStatus(name: String, up: Bool) throws {
         var ifr = ifreq()
         memset(&ifr, 0, MemoryLayout.size(ofValue: ifr))
-        name.copyTo(tuple:&ifr.ifr_name)
+        name.copyTo(&ifr.ifr_name)
         try NetworkInterface.withControlSocket(AF_INET) { ctl in
             guard ioctl(ctl, IfIoctl.SIOCGIFFLAGS, &ifr) == 0 else {
                 throw RVMError.sycallError("\(name):ioctl(SIOCGIFFLAGS)")
@@ -187,10 +187,10 @@ struct NetworkInterface {
     static func addInterfaceToBridge(_ ifc: String, to bridge: String) throws {
         var req = ifbreq()
         memset(&req, 0, MemoryLayout.size(ofValue: req))
-        ifc.copyTo(tuple:&req.ifbr_ifsname)
+        ifc.copyTo(&req.ifbr_ifsname)
         var ifd = ifdrv()
         memset(&ifd, 0, MemoryLayout.size(ofValue: ifd))
-        bridge.copyTo(tuple:&ifd.ifd_name)
+        bridge.copyTo(&ifd.ifd_name)
         ifd.ifd_cmd = 0 // BRDGADD: https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/net/if_bridgevar.h.auto.html
         withUnsafeMutablePointer(to: &req) { ifd.ifd_data = UnsafeMutableRawPointer($0) }
         ifd.ifd_len = MemoryLayout.size(ofValue: req)
@@ -206,10 +206,10 @@ struct NetworkInterface {
     static func ensureBridgeMembership(bridge: String, member: String) throws -> Bool {
         var req = ifbreq()
         memset(&req, 0, MemoryLayout.size(ofValue: req))
-        member.copyTo(tuple:&req.ifbr_ifsname)
+        member.copyTo(&req.ifbr_ifsname)
         var ifd = ifdrv()
         memset(&ifd, 0, MemoryLayout.size(ofValue: ifd))
-        bridge.copyTo(tuple:&ifd.ifd_name)
+        bridge.copyTo(&ifd.ifd_name)
         ifd.ifd_cmd = 2 // BRDGGIFFLGS: https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/net/if_bridgevar.h.auto.html
         withUnsafeMutablePointer(to: &req) { ifd.ifd_data = UnsafeMutableRawPointer($0) }
         ifd.ifd_len = MemoryLayout.size(ofValue: req)
