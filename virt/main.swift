@@ -5,128 +5,59 @@
 //  Created by Alexander Pinske on 06.12.20.
 //
 
-//.package(url: "https://github.com/apple/swift-log.git", from: "1.0.0")
-
 import Virtualization
 
 let verbose = CommandLine.arguments.contains("-v")
 
-let tcattr = UnsafeMutablePointer<termios>.allocate(capacity: 1)
-tcgetattr(FileHandle.standardInput.fileDescriptor, tcattr)
-let oldValue = tcattr.pointee.c_lflag
-atexit {
-    tcattr.pointee.c_lflag = oldValue
-    tcsetattr(FileHandle.standardInput.fileDescriptor, TCSAFLUSH, tcattr)
-    tcattr.deallocate()
-}
-tcattr.pointee.c_lflag &= ~UInt(ECHO | ICANON | ISIG)
-tcsetattr(FileHandle.standardInput.fileDescriptor, TCSAFLUSH, tcattr)
-
-if (access("/Users/nj0/sandbox/virt/vdb.img", F_OK) != 0) {
-    if (fclose(fopen("/Users/nj0/sandbox/virt/vdb.img", "w")) != 0) {
-        perror("create vdb.img")
-        exit(1)
-    }
-    if (truncate("/Users/nj0/sandbox/virt/vdb.img", 16 * 1024 * 1024 * 1024) != 0) {
-        perror("resize vdb.img")
-        exit(1)
-    }
-}
-
-let config = VZVirtualMachineConfiguration()
-config.cpuCount = 2
-config.memorySize = 4 * 1024 * 1024 * 1024
-
-do {
-    let vda = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vda.img"), readOnly: false)
-    let vdb = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vdb.img"), readOnly: false)
-    config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: vda), VZVirtioBlockDeviceConfiguration(attachment: vdb)]
-} catch {
-    fatalError("Virtual Machine Storage Error: \(error)")
-}
-
-config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
-
-
-let network = VZVirtioNetworkDeviceConfiguration()
-if let macAddressString = try? String(contentsOfFile: ".virt.mac", encoding: .utf8),
+var macAddr:VZMACAddress
+if let macAddressString = try? String(contentsOfFile: "/tmp/.virt.mac", encoding: .utf8),
    let macAddress = VZMACAddress(string: macAddressString.trimmingCharacters(in: .whitespacesAndNewlines)) {
-    network.macAddress = macAddress
+    macAddr = macAddress
 } else {
-    let macAddressString = network.macAddress.string
-    NSLog("Using new MAC Address \(macAddressString)")
+    let macAddressString = String("c2:6d:fd:60:10:2b")
     do {
-        try macAddressString.write(toFile: ".virt.mac", atomically: false, encoding: .utf8)
+        try macAddressString.write(toFile: "/tmp/.virt.mac", atomically: false, encoding: .utf8)
+        if let macAddress = VZMACAddress(string: macAddressString) {
+            macAddr = macAddress
+        } else {
+            fatalError("Virtual Machine Config Error")
+        }
     } catch {
         fatalError("Virtual Machine Config Error: \(error)")
     }
 }
-network.attachment = VZNATNetworkDeviceAttachment()
-//config.networkDevices = [network]
 
+let soPath = "/tmp/s.socket"
+unlink(soPath)
 
-let network2 = VZVirtioNetworkDeviceConfiguration()
-let vmac = network2.macAddress.ethernetAddress
+let lengthOfPath = soPath.withCString { Int(strlen($0)) }
+var addr = sockaddr_un()
+addr.sun_family = sa_family_t(AF_UNIX)
+_ = withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+    soPath.withCString {
+        strncpy(ptr, $0, lengthOfPath)
+    }
+}
+
+//let unixSocket = Darwin.socket(AF_UNIX, SOCK_DGRAM, 0)
+let unixSocket = Darwin.socket(PF_LOCAL, SOCK_DGRAM, 0)
+try withUnsafePointer(to: &addr) {
+    try $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        guard Darwin.bind(unixSocket, $0, UInt32(MemoryLayout<sockaddr_un>.stride)) != -1 else {
+            throw RVMError.illegalState("cannot bind unix domain socket")
+        }
+    }
+}
+
+chmod(soPath, 0o777)
+let vmac = macAddr.ethernetAddress
 do {
-    try network2.attachment = NetworkSwitch.shared.newBridgePort(hostBridge: "en0", vMac: vmac)
+    try NetworkSwitch.shared.newBridgePort(vmSock: unixSocket, hostBridge: "en0", vMac: vmac)
 } catch {
     fatalError("Virtual Machine Config Bridger Error: \(error)")
 }
-config.networkDevices = [network,network2]
-//bridger.start()
- 
 
-let bootloader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: "/Users/nj0/sandbox/virt/vmlinuz"))
-bootloader.commandLine = "console=hvc0 root=/dev/vda" + (verbose ? "" : " quiet")
-config.bootLoader = bootloader
-
-let fs0 = VZVirtioFileSystemDeviceConfiguration(tag: "fs0")
-fs0.share = VZMultipleDirectoryShare(directories: [
-    "home": VZSharedDirectory(url: FileManager.default.homeDirectoryForCurrentUser, readOnly: false),
-])
-config.directorySharingDevices = [fs0]
-
-if VZLinuxRosettaDirectoryShare.availability == .installed {
-    let rosetta = VZVirtioFileSystemDeviceConfiguration(tag: "rosetta")
-    rosetta.share = try VZLinuxRosettaDirectoryShare()
-    config.directorySharingDevices += [rosetta]
-}
-
-let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
-serial.attachment = VZFileHandleSerialPortAttachment(
-    fileHandleForReading: FileHandle.standardInput,
-    fileHandleForWriting: FileHandle.standardOutput
-)
-config.serialPorts = [serial]
-
-do {
-    try config.validate()
-} catch {
-    fatalError("Virtual Machine Config Error: \(error)")
-}
-let vm = VZVirtualMachine(configuration: config)
-class VMDelegate : NSObject, VZVirtualMachineDelegate {
-    func guestDidStop(_ virtualMachine: VZVirtualMachine) {
-        NSLog("Virtual Machine Stopped")
-        exit(0)
-    }
-
-    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
-        fatalError("Virtual Machine Run Error: \(error)")
-    }
-}
-let delegate = VMDelegate()
-vm.delegate = delegate
-vm.start { result in
-    switch result {
-    case .success:
-        NSLog("Virtual Machine Started")
-        NetworkSwitch.shared.start()
-        NSLog("bridger Started")
-    case let .failure(error):
-        fatalError("Virtual Machine Start Error: \(error)")
-    }
-}
+NetworkSwitch.shared.start()
 
 dispatchMain()
 NSLog("done dispatchMain")

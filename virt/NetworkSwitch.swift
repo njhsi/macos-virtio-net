@@ -14,14 +14,13 @@ final class NetworkSwitch: Thread {
 
     private var sockDevs: [VSockDev] = []
 
-    func newBridgePort(hostBridge: String, vMac: ether_addr_t) throws -> VZFileHandleNetworkDeviceAttachment {
+    func newBridgePort(vmSock: Int32, hostBridge: String, vMac: ether_addr_t) throws  {
         if isExecuting {
             throw RVMError.illegalState("cannot add port after switch has started")
         }
 
-        let vsockDev = try VSockDev(hostBridge: hostBridge, vMac: vMac)
+        let vsockDev = try VSockDev(vmSock: vmSock, hostBridge: hostBridge, vMac: vMac)
         sockDevs.append(vsockDev)
-        return VZFileHandleNetworkDeviceAttachment(fileHandle: FileHandle(fileDescriptor: vsockDev.remoteSocket))
     }
 
     /// Checks every bridge port and ensures that the bridge contains our interface.
@@ -85,11 +84,12 @@ final class NetworkSwitch: Thread {
     }
 }
 
+var vmSockAddr = sockaddr()
+var vmSockLen : socklen_t = 71
 private struct VSockDev {
     let hostInterface: String
     let vMac: ether_addr_t
     let vmSocket: Int32
-    let remoteSocket: Int32
     let bpfSocket: Int32
     let ndrvSocket: Int32
     let bpfBufferSize: Int
@@ -104,13 +104,14 @@ private struct VSockDev {
         return ioctl(bpfSocket, BpfIoctl.BIOCGSTATS, &stats) == 0 ? stats : bpf_stat(bs_recv: 0, bs_drop: 0)
     }
 
-    init(hostBridge: String, vMac: ether_addr_t) throws {
+    init(vmSock: Int32, hostBridge: String, vMac: ether_addr_t) throws {
         self.hostInterface = hostBridge
         self.isBridge = NetworkInterface.all.first(where: { $0.name == hostBridge })?.isBridge ?? false
         self.vMac = vMac
 
         (fethBridgeSide, fethVmSide) = isBridge ? try NetworkInterface.createFakeEthPair() : (hostBridge, hostBridge)
 
+        /*
         var socketPair: (Int32, Int32) = (0, 0)
         withUnsafePointer(to: &socketPair) {
             let ptr = UnsafeMutableRawPointer(mutating: $0).bindMemory(to: Int32.self, capacity: 2)
@@ -120,12 +121,13 @@ private struct VSockDev {
         }
 
         (vmSocket, remoteSocket) = socketPair
+         */
+        vmSocket = vmSock
+
         // set buffer size
         var size = 1024 * 1024 * 8
         setsockopt(vmSocket, SOL_SOCKET, SO_SNDBUF, &size, socklen_t(MemoryLayout<Int>.size))
         setsockopt(vmSocket, SOL_SOCKET, SO_RCVBUF, &size, socklen_t(MemoryLayout<Int>.size))
-        setsockopt(remoteSocket, SOL_SOCKET, SO_SNDBUF, &size, socklen_t(MemoryLayout<Int>.size))
-        setsockopt(remoteSocket, SOL_SOCKET, SO_RCVBUF, &size, socklen_t(MemoryLayout<Int>.size))
 
         self.bpfBufferSize = Int(BPF_MAXBUFSIZE)
         self.bpfReadBuffer = UnsafeMutableRawBufferPointer.allocate(byteCount: bpfBufferSize, alignment: 16)
@@ -183,14 +185,15 @@ private struct VSockDev {
                     }
                     let hdr = pktPtr.pointee
                     let dataPtr = UnsafeMutableRawPointer(mutating: pktPtr).advanced(by: Int(hdr.bh_hdrlen))
-                    let writeLen = write(vmSocket, dataPtr, Int(hdr.bh_caplen))
+                    //let writeLen = write(vmSocket, dataPtr, Int(hdr.bh_caplen))
+                    let writeLen = sendto(vmSocket,dataPtr,Int(hdr.bh_caplen),0,&vmSockAddr,vmSockLen)
                     numPackets += 1
                     wlen += Int(hdr.bh_caplen)
                     wlenActual += writeLen
                     if writeLen < 0 {
-                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) \(hdr.bh_caplen), \(vmSockLen) failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
                     } else if writeLen != Int(hdr.bh_caplen) {
-                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write() failed: partial write", throttleKey: "h2g-writ-partial")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) failed: partial write", throttleKey: "h2g-writ-partial")
                     }
                 }
                 pktPtr = nextPktPtr.alignedUp(toMultipleOf: BPF_ALIGNMENT).assumingMemoryBound(to: bpf_hdr.self)
@@ -208,8 +211,10 @@ private struct VSockDev {
         let basePtr = bpfReadBuffer.baseAddress!
         var offset = 0
         while offset < availableLen {
-            let n = read(vmSocket, basePtr, availableLen - offset)
+      //      let n = read(vmSocket, basePtr, availableLen - offset)
+            let n = recvfrom(vmSocket, basePtr, availableLen - offset, 0, &vmSockAddr, &vmSockLen)
             if n > 0 {
+      //          NetworkSwitch.logger.error("\(hostInterface)-g2h: read \(n), \(clientSockLen) ")
                 let len = write(ndrvSocket, basePtr, n)
                 if len != n {
                     if len < 0 {
@@ -313,7 +318,6 @@ private struct VSockDev {
 
     func close() {
         Darwin.close(vmSocket)
-        Darwin.close(remoteSocket)
         Darwin.close(bpfSocket)
         Darwin.close(ndrvSocket)
         if isBridge {
