@@ -84,8 +84,9 @@ final class NetworkSwitch: Thread {
     }
 }
 
-var vmSockAddr = sockaddr()
-var vmSockLen : socklen_t = 71
+var vmSockAddr_ss = sockaddr_storage()
+var vmSockAddr = UnsafeMutableRawPointer(&vmSockAddr_ss).bindMemory(to: sockaddr.self, capacity: 1)
+var vmSockLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
 private struct VSockDev {
     let hostInterface: String
     let vMac: ether_addr_t
@@ -108,21 +109,9 @@ private struct VSockDev {
         self.hostInterface = hostBridge
         self.isBridge = NetworkInterface.all.first(where: { $0.name == hostBridge })?.isBridge ?? false
         self.vMac = vMac
+        self.vmSocket = vmSock
 
         (fethBridgeSide, fethVmSide) = isBridge ? try NetworkInterface.createFakeEthPair() : (hostBridge, hostBridge)
-
-        /*
-        var socketPair: (Int32, Int32) = (0, 0)
-        withUnsafePointer(to: &socketPair) {
-            let ptr = UnsafeMutableRawPointer(mutating: $0).bindMemory(to: Int32.self, capacity: 2)
-            guard socketpair(PF_LOCAL, SOCK_DGRAM, 0, ptr) == 0 else {
-                fatalError("socketpair() failed: \(String(cString: strerror(errno)))")
-            }
-        }
-
-        (vmSocket, remoteSocket) = socketPair
-         */
-        vmSocket = vmSock
 
         // set buffer size
         var size = 1024 * 1024 * 8
@@ -175,7 +164,7 @@ private struct VSockDev {
         if len > 0 {
             let endPtr = buffer.advanced(by: len)
             var pktPtr = buffer.assumingMemoryBound(to: bpf_hdr.self)
-            while pktPtr < endPtr {
+            while pktPtr < endPtr && vmSockAddr.pointee.sa_len > 0{ //bynj: TODO vmSockAddr ready check
                 // for each packet
                 let hdr = pktPtr.pointee
                 let nextPktPtr = UnsafeMutableRawPointer(pktPtr).advanced(by: Int(hdr.bh_caplen) + Int(hdr.bh_hdrlen))
@@ -186,12 +175,12 @@ private struct VSockDev {
                     let hdr = pktPtr.pointee
                     let dataPtr = UnsafeMutableRawPointer(mutating: pktPtr).advanced(by: Int(hdr.bh_hdrlen))
                     //let writeLen = write(vmSocket, dataPtr, Int(hdr.bh_caplen))
-                    let writeLen = sendto(vmSocket,dataPtr,Int(hdr.bh_caplen),0,&vmSockAddr,vmSockLen)
+                    let writeLen = sendto(vmSocket,dataPtr,Int(hdr.bh_caplen),0,vmSockAddr,vmSockLen)
                     numPackets += 1
                     wlen += Int(hdr.bh_caplen)
                     wlenActual += writeLen
                     if writeLen < 0 {
-                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) \(hdr.bh_caplen), \(vmSockLen) failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) \(hdr.bh_caplen), \(vmSockAddr.pointee) \(vmSockLen) failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
                     } else if writeLen != Int(hdr.bh_caplen) {
                         NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) failed: partial write", throttleKey: "h2g-writ-partial")
                     }
@@ -212,7 +201,7 @@ private struct VSockDev {
         var offset = 0
         while offset < availableLen {
       //      let n = read(vmSocket, basePtr, availableLen - offset)
-            let n = recvfrom(vmSocket, basePtr, availableLen - offset, 0, &vmSockAddr, &vmSockLen)
+            let n = recvfrom(vmSocket, basePtr, availableLen - offset, 0, vmSockAddr, &vmSockLen)
             if n > 0 {
       //          NetworkSwitch.logger.error("\(hostInterface)-g2h: read \(n), \(clientSockLen) ")
                 let len = write(ndrvSocket, basePtr, n)
