@@ -1,14 +1,13 @@
-# macosvm
-macOS vm with bridged network, rootlessly(#TODO), without fruit's bridgednetwork entitlement(#DONE)
+# macos-virtio-net
+this provides virtio-net to macos virtual machine by an unix socket file, with no fruit's bridged entitlement needed, to get a bridged network to vm..
+(ref :	https://amodm.com/blog/2024/07/03/running-a-linux-router-on-macos )
+
+usage:
+1. $ sudo mvn -s /tmp/s.socket -a c2:6d:fd:60:10:2b -i en0
+2. $ vfkit .. --device virtio-net,unixSocketPath=/tmp/s.socket,mac=c2:6d:fd:60:10:2b
 
 notes:
-1. change "vda.img vdb.img vmlinuz" in main.swift to your prepared ones
-2. change "en0" in main.swift to your Ethernet interface
-3. need sudo to run this for the time being
-
-ref:
-- vm part: 	https://github.com/apinske/virt.git
-- network part:	https://amodm.com/blog/2024/07/03/running-a-linux-router-on-macos
-
+1. mac address keep the same between
+2. ethernet cable interface such as en0 is tested ok; wifi interface tested not ok
 
 
