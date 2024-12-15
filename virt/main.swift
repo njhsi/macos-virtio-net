@@ -38,15 +38,11 @@ NSLog("info: ethernet=\(ifEth), socket=\(filePathSocket), mac=\(macAddrRemote)")
 unlink(filePathSocket)
 let lengthOfPath = filePathSocket.withCString { Int(strlen($0)) }
 var addr = sockaddr_un()
+addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
 addr.sun_family = sa_family_t(AF_UNIX)
-_ = withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
-    filePathSocket.withCString {
-        strncpy(ptr, $0, lengthOfPath)
-    }
-}
+filePathSocket.copyTo(&addr.sun_path)
 
-//let unixSocket = Darwin.socket(AF_UNIX, SOCK_DGRAM, 0)
-let unixSocket = Darwin.socket(PF_LOCAL, SOCK_DGRAM, 0)
+let unixSocket = socket(PF_LOCAL, SOCK_DGRAM, 0)
 try withUnsafePointer(to: &addr) {
     try $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
         guard Darwin.bind(unixSocket, $0, UInt32(MemoryLayout<sockaddr_un>.stride)) != -1 else {

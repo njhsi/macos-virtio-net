@@ -180,7 +180,8 @@ private struct VSockDev {
                     wlen += Int(hdr.bh_caplen)
                     wlenActual += writeLen
                     if writeLen < 0 {
-                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) \(hdr.bh_caplen), \(vmSockAddr.pointee) \(vmSockLen) failed: \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
+                        NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) \(hdr.bh_caplen), \(vmSockAddr.pointee) \(vmSockLen) failed: err=\(errno) \(String(cString: strerror(errno)))", throttleKey: "h2g-writ-fail")
+                        vmSockAddr.pointee.sa_len = (errno==2) ? 0 : vmSockAddr.pointee.sa_len //err=2 No such file or directory
                     } else if writeLen != Int(hdr.bh_caplen) {
                         NetworkSwitch.logger.error("\(hostInterface)-h2g: write(\(vmSocket)) failed: partial write", throttleKey: "h2g-writ-partial")
                     }
